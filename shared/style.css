@@ -133,13 +133,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .history-row {
   display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
 }
 
-.history-row .label { width: 90px; font-size: 14px; color: var(--muted); flex-shrink: 0; }
-.history-row .thumbs { display: flex; gap: 6px; overflow-x: auto; }
-.history-row .thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.history-row .label { font-size: 14px; color: var(--muted); font-weight: 600; }
+.history-row .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.history-row .thumbs img {
+  width: 140px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  cursor: zoom-in;
+}
 .history-row .empty { font-size: 13px; color: var(--muted); }
+
+@media (min-width: 480px) {
+  .history-row .thumbs img { width: 160px; height: 160px; }
+}
