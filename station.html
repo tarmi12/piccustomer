@@ -145,7 +145,7 @@ function renderHistory(stations) {
       <div class="label">${labels[key]}</div>
       <div class="thumbs">
         ${thumbs.length
-          ? thumbs.map(u => `<img src="${u}">`).join('')
+          ? thumbs.map(u => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}"></a>`).join('')
           : '<span class="empty">ยังไม่ถ่าย</span>'}
       </div>
     </div>`;
