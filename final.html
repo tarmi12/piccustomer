@@ -1,117 +1,303 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>สถานีสุดท้าย — ยืนยันรับเงิน</title>
-<link rel="stylesheet" href="shared/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Final - สแกนรับเงินและรายงาน</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="shared/config.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: auto; }
+    .login-box { max-width: 360px; margin: 80px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); text-align: center; }
+    .tabs-nav { display: flex; gap: 8px; margin: 16px 0; border-bottom: 2px solid #ddd; padding-bottom: 8px; }
+    .tab-btn { flex: 1; padding: 12px; border: none; background: #e0e0e0; cursor: pointer; border-radius: 8px; font-size: 15px; font-weight: bold; }
+    .tab-btn.active { background: #2e7d32; color: #fff; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .station-block { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 12px; background: #fafafa; }
+    .img-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .img-thumb { width: 110px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid #bbb; }
+    table.report-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    table.report-table th, table.report-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    table.report-table th { background: #f0f0f0; }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <span class="station-tag">Final</span>
-  <h1>ยืนยันตัวตน + รับเงิน</h1>
 
-  <label for="billInput">เลขที่บิล (สแกนบาร์โค้ดหรือพิมพ์)</label>
-  <input type="text" id="billInput" autofocus placeholder="สแกนบาร์โค้ด...">
+  <!-- ส่วนที่ 1: หน้าต่าง Login -->
+  <div id="loginSection" class="login-box">
+    <h2>เข้าสู่ระบบ (Final)</h2>
+    <input type="text" id="loginUser" placeholder="ชื่อผู้ใช้" style="width: 90%; padding: 10px; margin: 8px 0; font-size: 16px;"><br>
+    <input type="password" id="loginPass" placeholder="รหัสผ่าน" style="width: 90%; padding: 10px; margin: 8px 0; font-size: 16px;"><br>
+    <button onclick="handleLogin()" style="width: 95%; padding: 12px; margin-top: 12px; background: #2e7d32; color: #fff; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">เข้าสู่ระบบ</button>
+    <p id="loginError" style="color: red; margin-top: 8px; display: none;">ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</p>
+  </div>
 
-  <div id="lookupStatus"></div>
-
-  <div id="reviewBox" style="display:none;">
-    <div class="section">
-      <label>ชื่อลูกค้า</label>
-      <div id="customerName" style="font-size:18px; margin-bottom:6px;"></div>
+  <!-- ส่วนที่ 2: เมนูหลัก 3 แท็บ -->
+  <div id="mainSection" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>ระบบรับเงินและรายงาน (Final)</h2>
+      <button onclick="handleLogout()" style="padding: 6px 12px; background: #757575; color: #fff; border: none; border-radius: 4px; cursor: pointer;">ออกจากระบบ</button>
     </div>
-    <div class="section">
-      <label>รูปทั้งหมดจากทุกสถานี — ตรวจสอบว่าเป็นคนเดียวกัน</label>
-      <div id="allRows"></div>
+
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('tab1', this)">1. สแกนรับเงิน</button>
+      <button class="tab-btn" onclick="switchTab('tab2', this); loadTodayReport();">2. รายงานวันนี้</button>
+      <button class="tab-btn" onclick="switchTab('tab3', this)">3. รายงานย้อนหลัง (Google Drive)</button>
     </div>
-    <div class="section">
-      <button class="btn-primary" id="paidBtn">รับเงินแล้ว</button>
+
+    <!-- แท็บ 1: สแกนรับเงิน -->
+    <div id="tab1" class="tab-content active">
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <input type="text" id="scanBillInput" placeholder="สแกนหรือกรอกเลขบิล..." style="flex: 1; padding: 10px; font-size: 18px;" onkeypress="if(event.key==='Enter') searchBillForPayment()">
+        <button onclick="searchBillForPayment()" style="padding: 10px 20px; font-size: 16px; background: #1976d2; color: #fff; border: none; border-radius: 6px; cursor: pointer;">ค้นหาบิล</button>
+      </div>
+
+      <div id="billInfo" style="display: none;">
+        <h3 id="displayBillNumber" style="color: #2e7d32;"></h3>
+        <div class="station-block"><h4>รูป Station 1:</h4><div id="st1Images" class="img-grid">ไม่มีรูป</div></div>
+        <div class="station-block"><h4>รูป Station 2:</h4><div id="st2Images" class="img-grid">ไม่มีรูป</div></div>
+        <div class="station-block"><h4>รูป Station 3:</h4><div id="st3Images" class="img-grid">ไม่มีรูป</div></div>
+
+        <button id="btnConfirmPay" onclick="confirmPaymentAndUploadDrive()" style="width: 100%; padding: 14px; background: #2e7d32; color: #fff; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer;">
+          ยืนยันรับเงินแล้ว (บันทึกรูปทั้งหมดลง Google Drive)
+        </button>
+      </div>
+      <div id="tab1Loading" style="display: none; color: #d32f2f; font-weight: bold; margin-top: 10px;">กำลังส่งรูปเข้า Google Drive กรุณารอสักครู่...</div>
+    </div>
+
+    <!-- แท็บ 2: รายงานวันนี้ -->
+    <div id="tab2" class="tab-content">
+      <h3>รายการบิลวันนี้ (จาก Supabase)</h3>
+      <button onclick="loadTodayReport()" style="padding: 6px 12px; margin-bottom: 8px;">รีเฟรชข้อมูล</button>
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>เลขบิล</th>
+            <th>เวลา St.1</th>
+            <th>เวลา St.2</th>
+            <th>เวลา St.3</th>
+            <th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody id="todayReportBody">
+          <tr><td colspan="5" style="text-align: center;">กำลังโหลดข้อมูล...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- แท็บ 3: รายงานย้อนหลัง -->
+    <div id="tab3" class="tab-content">
+      <h3>ค้นหารูปย้อนหลัง (จาก Google Drive)</h3>
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <input type="text" id="driveBillInput" placeholder="กรอกเลขบิล..." style="flex: 1; padding: 10px; font-size: 16px;" onkeypress="if(event.key==='Enter') searchDriveBill()">
+        <button onclick="searchDriveBill()" style="padding: 10px 20px; font-size: 16px; background: #f57c00; color: #fff; border: none; border-radius: 6px; cursor: pointer;">ค้นหาใน Drive</button>
+      </div>
+      <div id="driveLoading" style="display: none; color: #666;">กำลังค้นหาใน Google Drive...</div>
+      <div id="driveResults" class="img-grid"></div>
     </div>
   </div>
 
-  <div id="paidStatus"></div>
-</div>
+  <script>
+    // รหัสผ่านเข้าใช้งาน (เปลี่ยนได้ตามต้องการ)
+    const AUTH_USER = "admin";
+    const AUTH_PASS = "1234";
 
-<script src="shared/config.js"></script>
-<script src="shared/api.js"></script>
-<script>
-const billInput = document.getElementById('billInput');
-const lookupStatus = document.getElementById('lookupStatus');
-const reviewBox = document.getElementById('reviewBox');
-const customerNameEl = document.getElementById('customerName');
-const allRows = document.getElementById('allRows');
-const paidBtn = document.getElementById('paidBtn');
-const paidStatus = document.getElementById('paidStatus');
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentBillData = null;
 
-let currentBill = null;
-
-billInput.addEventListener('change', async () => {
-  const bill = billInput.value.trim();
-  if (!bill) return;
-  currentBill = bill;
-  reviewBox.style.display = 'none';
-  paidStatus.innerHTML = '';
-  lookupStatus.innerHTML = statusHtml('info', 'กำลังค้นหา...');
-  try {
-    const res = await callGas('getCustomer', { billNumber: bill });
-    if (!res.found) {
-      lookupStatus.innerHTML = statusHtml('error', 'ไม่พบบิลนี้ในระบบ — ยังไม่ได้ถ่ายภาพที่สถานีใดเลย');
-      return;
+    if (sessionStorage.getItem("isLoggedIn") === "true") {
+      showMain();
     }
-    lookupStatus.innerHTML = '';
-    customerNameEl.textContent = res.customerName || '(ไม่มีชื่อบันทึกไว้)';
-    renderRows(res.stations);
-    if (res.finalStatus === 'รับเงินแล้ว') {
-      paidStatus.innerHTML = statusHtml('info', 'บิลนี้รับเงินไปแล้วก่อนหน้านี้');
-      paidBtn.disabled = true;
-    } else {
-      paidBtn.disabled = false;
+
+    function handleLogin() {
+      const u = document.getElementById("loginUser").value.trim();
+      const p = document.getElementById("loginPass").value.trim();
+      if (u === AUTH_USER && p === AUTH_PASS) {
+        sessionStorage.setItem("isLoggedIn", "true");
+        showMain();
+      } else {
+        document.getElementById("loginError").style.display = "block";
+      }
     }
-    reviewBox.style.display = 'block';
-  } catch (err) {
-    lookupStatus.innerHTML = statusHtml('error', err.message);
-  }
-});
 
-function renderRows(stations) {
-  const labels = { station1: 'Station 1', station2: 'Station 2', station3: 'Station 3' };
-  allRows.innerHTML = Object.keys(labels).map(key => {
-    const st = stations[key];
-    const thumbs = (st && st.thumbs) || [];
-    return `<div class="history-row">
-      <div class="label">${labels[key]}</div>
-      <div class="thumbs">
-        ${thumbs.length
-          ? thumbs.map(u => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}"></a>`).join('')
-          : '<span class="empty">ยังไม่ถ่าย</span>'}
-      </div>
-    </div>`;
-  }).join('');
-}
+    function handleLogout() {
+      sessionStorage.removeItem("isLoggedIn");
+      location.reload();
+    }
 
-paidBtn.addEventListener('click', async () => {
-  if (!currentBill) return;
-  paidBtn.disabled = true;
-  paidStatus.innerHTML = statusHtml('info', 'กำลังบันทึก...');
-  try {
-    await callGas('markPaid', { billNumber: currentBill });
-    paidStatus.innerHTML = statusHtml('ok', 'บันทึก "รับเงินแล้ว" สำเร็จ');
-    setTimeout(() => {
-      billInput.value = '';
-      reviewBox.style.display = 'none';
-      paidStatus.innerHTML = '';
-      billInput.focus();
-    }, 1200);
-  } catch (err) {
-    paidStatus.innerHTML = statusHtml('error', err.message);
-    paidBtn.disabled = false;
-  }
-});
+    function showMain() {
+      document.getElementById("loginSection").style.display = "none";
+      document.getElementById("mainSection").style.display = "block";
+    }
 
-function statusHtml(type, msg) {
-  return `<div class="status ${type}">${msg}</div>`;
-}
-</script>
+    function switchTab(tabId, btn) {
+      document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+      document.getElementById(tabId).classList.add("active");
+      btn.classList.add("active");
+    }
+
+    async function searchBillForPayment() {
+      const billNo = document.getElementById("scanBillInput").value.trim();
+      if (!billNo) return;
+
+      const { data, error } = await db.from("customers").select("*").eq("bill_number", billNo).single();
+      if (error || !data) {
+        alert("ไม่พบเลขบิลนี้ในระบบ");
+        return;
+      }
+
+      currentBillData = data;
+      document.getElementById("displayBillNumber").innerText = "เลขบิล: " + data.bill_number;
+      renderStationThumbs("st1Images", data.station1_thumbs);
+      renderStationThumbs("st2Images", data.station2_thumbs);
+      renderStationThumbs("st3Images", data.station3_thumbs);
+      document.getElementById("billInfo").style.display = "block";
+    }
+
+    function renderStationThumbs(containerId, urls) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = "";
+      if (!urls || urls.length === 0) { el.innerText = "ไม่มีรูปภาพ"; return; }
+      urls.forEach(url => {
+        const img = document.createElement("img");
+        img.src = url;
+        img.className = "img-thumb";
+        el.appendChild(img);
+      });
+    }
+
+    async function urlToBase64(url) {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function confirmPaymentAndUploadDrive() {
+      if (!currentBillData) return;
+      document.getElementById("tab1Loading").style.display = "block";
+      document.getElementById("btnConfirmPay").disabled = true;
+
+      try {
+        const allUrls = [
+          ...(currentBillData.station1_thumbs || []),
+          ...(currentBillData.station2_thumbs || []),
+          ...(currentBillData.station3_thumbs || [])
+        ];
+
+        const imagesPayload = [];
+        for (let i = 0; i < allUrls.length; i++) {
+          const b64 = await urlToBase64(allUrls[i]);
+          imagesPayload.push({
+            name: `st_${i + 1}.jpg`,
+            base64: b64
+          });
+        }
+
+        if (imagesPayload.length > 0) {
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "saveBillImages",
+              billNumber: currentBillData.bill_number,
+              images: imagesPayload
+            })
+          });
+        }
+
+        await db.from("customers").update({
+          final_status: "PAID",
+          final_time: new Date().toISOString()
+        }).eq("bill_number", currentBillData.bill_number);
+
+        alert("บันทึกรับเงินและส่งรูปเข้า Google Drive เรียบร้อยแล้ว!");
+        document.getElementById("billInfo").style.display = "none";
+        document.getElementById("scanBillInput").value = "";
+      } catch (err) {
+        alert("เกิดข้อผิดพลาด: " + err.message);
+      } finally {
+        document.getElementById("tab1Loading").style.display = "none";
+        document.getElementById("btnConfirmPay").disabled = false;
+      }
+    }
+
+    async function loadTodayReport() {
+      const tbody = document.getElementById("todayReportBody");
+      tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>กำลังโหลด...</td></tr>";
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const { data, error } = await db.from("customers")
+        .select("*")
+        .gte("created_at", todayStart.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>ไม่มีรายการของวันนี้</td></tr>";
+        return;
+      }
+
+      tbody.innerHTML = "";
+      data.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${row.bill_number}</strong></td>
+          <td>${row.station1_time ? new Date(row.station1_time).toLocaleTimeString() : '-'}</td>
+          <td>${row.station2_time ? new Date(row.station2_time).toLocaleTimeString() : '-'}</td>
+          <td>${row.station3_time ? new Date(row.station3_time).toLocaleTimeString() : '-'}</td>
+          <td>${row.final_status === 'PAID' ? '<span style="color:green;font-weight:bold;">รับเงินแล้ว</span>' : 'รอดำเนินการ'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function searchDriveBill() {
+      const billNo = document.getElementById("driveBillInput").value.trim();
+      if (!billNo) return;
+
+      const container = document.getElementById("driveResults");
+      const loading = document.getElementById("driveLoading");
+      container.innerHTML = "";
+      loading.style.display = "block";
+
+      try {
+        const res = await fetch(GOOGLE_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "getBillImages",
+            billNumber: billNo
+          })
+        });
+
+        const result = await res.json();
+        if (!result.success || !result.files || result.files.length === 0) {
+          container.innerHTML = "<p>ไม่พบรูปภาพของบิลนี้ใน Google Drive</p>";
+          return;
+        }
+
+        result.files.forEach(file => {
+          const img = document.createElement("img");
+          img.src = file.viewUrl;
+          img.className = "img-thumb";
+          container.appendChild(img);
+        });
+      } catch (e) {
+        container.innerHTML = "<p style='color: red;'>เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Drive</p>";
+      } finally {
+        loading.style.display = "none";
+      }
+    }
+  </script>
 </body>
 </html>
