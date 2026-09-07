@@ -1,62 +1,70 @@
-// camera.js
-// จัดการเลือกกล้อง USB (รองรับหลายตัว), เปิด/ปิด stream, และถ่ายภาพ (เต็ม + ย่อ)
+const CameraModule = {
+  stream: null,
+  videoElement: null,
 
-const CameraModule = (() => {
-  let currentStream = null;
+  async init(selectId, videoId) {
+    this.videoElement = document.getElementById(videoId);
+    const select = document.getElementById(selectId);
 
-  async function listCameras() {
-    // ต้องขอ permission ก่อนครั้งแรก ไม่งั้น label ของกล้องจะว่างเปล่า
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("เบราว์เซอร์ของคุณไม่รองรับการเปิดกล้อง หรือไม่ได้เชื่อมต่อผ่าน HTTPS");
+      return;
+    }
+
     try {
-      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      tempStream.getTracks().forEach(t => t.stop());
+      // 1. ขอสิทธิ์เปิดกล้องรอบแรก เพื่อให้เบราว์เซอร์ยอมแสดงชื่อกล้องทั้งหมด
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      tempStream.getTracks().forEach(track => track.stop());
+
+      // 2. ดึงรายชื่ออุปกรณ์กล้อง USB ทั้งหมดที่ต่ออยู่
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+      select.innerHTML = '';
+
+      if (videoDevices.length === 0) {
+        const opt = document.createElement('option');
+        opt.text = "ไม่พบอุปกรณ์กล้อง";
+        select.appendChild(opt);
+        return;
+      }
+
+      // 3. ใส่รายชื่อกล้องลงใน Dropdown
+      videoDevices.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.text = device.label || `กล้องตัวที่ ${index + 1}`;
+        select.appendChild(option);
+      });
+
+      // 4. สั่งเปิดกล้องตัวแรกทันที
+      await this.startCamera(videoDevices[0].deviceId);
+
     } catch (err) {
-      throw new Error('ไม่สามารถขอสิทธิ์กล้องได้: ' + err.message);
+      console.error("Camera access error:", err);
+      alert("กรุณากด 'อนุญาต' (Allow) ให้เบราว์เซอร์เข้าถึงกล้องถ่ายภาพ");
     }
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices.filter(d => d.kind === 'videoinput');
-  }
+  },
 
-  async function start(deviceId, videoEl, storageKey) {
-    if (currentStream) {
-      currentStream.getTracks().forEach(t => t.stop());
+  async startCamera(deviceId) {
+    // ปิดสตรีมกล้องเดิมก่อน ถ้าเปิดค้างอยู่
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
     }
-    currentStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
-    });
-    videoEl.srcObject = currentStream;
-    await videoEl.play();
-    if (storageKey) localStorage.setItem(storageKey, deviceId);
-  }
 
-  function stop() {
-    if (currentStream) {
-      currentStream.getTracks().forEach(t => t.stop());
-      currentStream = null;
-    }
-  }
-
-  // ถ่ายจาก video element ปัจจุบัน คืนค่า { mimeType, original (base64 ล้วน), thumbnail (base64 ล้วน) }
-  function capture(videoEl, { thumbWidth = 400, quality = 0.85 } = {}) {
-    const fullCanvas = document.createElement('canvas');
-    fullCanvas.width = videoEl.videoWidth;
-    fullCanvas.height = videoEl.videoHeight;
-    fullCanvas.getContext('2d').drawImage(videoEl, 0, 0);
-    const fullDataUrl = fullCanvas.toDataURL('image/jpeg', quality);
-
-    const scale = thumbWidth / videoEl.videoWidth;
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbWidth;
-    thumbCanvas.height = Math.round(videoEl.videoHeight * scale);
-    thumbCanvas.getContext('2d').drawImage(videoEl, 0, 0, thumbCanvas.width, thumbCanvas.height);
-    const thumbDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.5);
-
-    return {
-      mimeType: 'image/jpeg',
-      original: fullDataUrl.split(',')[1],
-      thumbnail: thumbDataUrl.split(',')[1],
-      previewUrl: thumbDataUrl, // ใช้แสดงผลใน gallery ทันทีโดยไม่ต้องรอ upload
+    const constraints = {
+      video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: false
     };
-  }
 
-  return { listCameras, start, stop, capture };
-})();
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (this.videoElement) {
+        this.videoElement.srcObject = this.stream;
+      }
+    } catch (err) {
+      console.error("Failed to start camera device:", err);
+      alert("ไม่สามารถเปิดกล้องที่เลือกได้");
+    }
+  }
+};
