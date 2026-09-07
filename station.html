@@ -1,190 +1,189 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>สถานีถ่ายภาพยืนยันตัวตน</title>
-<link rel="stylesheet" href="shared/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Station ถ่ายภาพ</title>
+  <link rel="stylesheet" href="shared/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="shared/config.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/camera.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 16px; max-width: 800px; margin: auto; }
+    .station-header { background: #2e7d32; color: #fff; padding: 12px; border-radius: 8px; text-align: center; }
+    .camera-container { margin: 16px 0; text-align: center; }
+    video { width: 100%; max-width: 480px; height: auto; border-radius: 8px; background: #000; }
+    .preview-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .thumb-wrap { position: relative; width: 100px; height: 100px; }
+    .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+    .thumb-wrap button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; cursor: pointer; }
+    .compare-box { margin-top: 20px; padding: 12px; border: 1px dashed #4caf50; border-radius: 8px; background: #f9fff9; }
+    .btn-large { padding: 12px 24px; font-size: 16px; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-green { background: #2e7d32; color: #fff; }
+    .btn-blue { background: #1976d2; color: #fff; }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <span class="station-tag" id="stationTag">สถานี</span>
-  <h1>ถ่ายภาพยืนยันตัวตน</h1>
 
-  <label for="billInput">เลขที่บิล (สแกนบาร์โค้ดหรือพิมพ์)</label>
-  <input type="text" id="billInput" autofocus placeholder="สแกนบาร์โค้ด...">
-
-  <div id="lookupStatus"></div>
-
-  <div id="historyBox" style="display:none;">
-    <div class="section">
-      <label>รูปจากสถานีอื่น (เทียบดูว่าเป็นคนเดียวกัน)</label>
-      <div id="historyRows"></div>
-    </div>
+  <div class="station-header">
+    <h2 id="stationTitle">สถานีถ่ายภาพ</h2>
   </div>
 
-  <div class="section">
-    <label for="cameraSelect">เลือกกล้อง</label>
-    <select id="cameraSelect"></select>
-    <video id="video" autoplay playsinline muted></video>
-    <button class="btn-primary" id="captureBtn" disabled>ถ่ายภาพ</button>
+  <div style="margin-top: 16px;">
+    <label><strong>สแกน / กรอกเลขบิล:</strong></label><br>
+    <input type="text" id="billInput" placeholder="กรอกเลขบิล..." style="width: 70%; padding: 10px; font-size: 18px;" onkeypress="if(event.key==='Enter') searchBill()">
+    <button class="btn-large btn-blue" onclick="searchBill()">ค้นหาบิล</button>
   </div>
 
-  <div class="section">
-    <label>รูปที่จะบันทึก (<span id="photoCount">0</span> รูป)</label>
-    <div class="gallery" id="gallery"></div>
-    <button class="btn-primary" id="submitBtn" disabled>ยืนยันบันทึกรูป</button>
+  <!-- โซนเทียบรูปเดิมจากสถานีอื่น -->
+  <div id="compareArea" class="compare-box" style="display:none;">
+    <h4>รูปที่เคยถ่ายจากสถานีอื่น (สำหรับเทียบหน้า):</h4>
+    <div id="compareImages" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
   </div>
 
-  <div id="submitStatus"></div>
-</div>
+  <!-- โซนกล้อง -->
+  <div class="camera-container">
+    <label>เลือกกล้อง: </label>
+    <select id="cameraSelect" onchange="switchCamera()" style="padding: 6px;"></select>
+    <br><br>
+    <video id="videoElement" autoplay playsinline></video>
+    <br>
+    <button class="btn-large btn-blue" onclick="takeSnapshot()">📸 ถ่ายรูป</button>
+  </div>
 
-<script src="shared/config.js"></script>
-<script src="shared/api.js"></script>
-<script src="shared/camera.js"></script>
-<script>
-const params = new URLSearchParams(location.search);
-const STATION = params.get('station') === '2' ? 'station2'
-  : params.get('station') === '3' ? 'station3'
-  : 'station1';
-document.getElementById('stationTag').textContent =
-  { station1: 'Station 1', station2: 'Station 2', station3: 'Station 3' }[STATION];
+  <!-- รูปที่เพิ่งถ่าย -->
+  <div>
+    <h4>รูปที่ถ่ายรอบนี้:</h4>
+    <div id="capturedList" class="preview-list"></div>
+  </div>
 
-const videoEl = document.getElementById('video');
-const cameraSelect = document.getElementById('cameraSelect');
-const captureBtn = document.getElementById('captureBtn');
-const submitBtn = document.getElementById('submitBtn');
-const billInput = document.getElementById('billInput');
-const lookupStatus = document.getElementById('lookupStatus');
-const historyBox = document.getElementById('historyBox');
-const historyRows = document.getElementById('historyRows');
-const gallery = document.getElementById('gallery');
-const photoCount = document.getElementById('photoCount');
-const submitStatus = document.getElementById('submitStatus');
+  <div style="margin-top: 20px;">
+    <button id="btnSave" class="btn-large btn-green" style="width: 100%;" onclick="saveData()">บันทึกข้อมูลสถานี</button>
+  </div>
 
-let pendingPhotos = []; // { previewUrl, mimeType, original, thumbnail }
-let currentBill = null;
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const stationId = urlParams.get('station') || '1';
+    document.getElementById("stationTitle").innerText = `สถานีถ่ายภาพที่ ${stationId}`;
 
-// ---------- กล้อง ----------
-async function initCameras() {
-  try {
-    const cams = await CameraModule.listCameras();
-    if (cams.length === 0) {
-      lookupStatus.innerHTML = statusHtml('error', 'ไม่พบกล้อง USB ที่เครื่องนี้');
-      return;
-    }
-    cameraSelect.innerHTML = cams.map((c, i) =>
-      `<option value="${c.deviceId}">${c.label || 'กล้อง ' + (i + 1)}</option>`).join('');
+    let capturedImages = []; // เก็บ Data URL รูปย่อ
 
-    const savedId = localStorage.getItem('selectedCameraId_' + STATION);
-    if (savedId && cams.some(c => c.deviceId === savedId)) {
-      cameraSelect.value = savedId;
-    }
-    await CameraModule.start(cameraSelect.value, videoEl, 'selectedCameraId_' + STATION);
-    captureBtn.disabled = false;
-  } catch (err) {
-    lookupStatus.innerHTML = statusHtml('error', err.message);
-  }
-}
-
-cameraSelect.addEventListener('change', async () => {
-  await CameraModule.start(cameraSelect.value, videoEl, 'selectedCameraId_' + STATION);
-});
-
-captureBtn.addEventListener('click', () => {
-  const photo = CameraModule.capture(videoEl);
-  pendingPhotos.push(photo);
-  renderGallery();
-});
-
-function renderGallery() {
-  gallery.innerHTML = pendingPhotos.map((p, i) => `
-    <figure>
-      <img src="${p.previewUrl}" alt="รูปที่ ${i + 1}">
-      <button data-i="${i}" title="ลบรูปนี้">×</button>
-    </figure>
-  `).join('');
-  photoCount.textContent = pendingPhotos.length;
-  submitBtn.disabled = pendingPhotos.length === 0 || !currentBill;
-  gallery.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      pendingPhotos.splice(Number(btn.dataset.i), 1);
-      renderGallery();
+    // เริ่มต้นกล้อง
+    window.addEventListener("DOMContentLoaded", async () => {
+      await CameraModule.init('cameraSelect', 'videoElement');
     });
-  });
-}
 
-// ---------- ค้นหาบิล ----------
-billInput.addEventListener('change', async () => {
-  const bill = billInput.value.trim();
-  if (!bill) return;
-  currentBill = bill;
-  lookupStatus.innerHTML = statusHtml('info', 'กำลังค้นหา...');
-  try {
-    const res = await callGas('getCustomer', { billNumber: bill });
-    if (!res.found) {
-      lookupStatus.innerHTML = statusHtml('info', 'ไม่พบข้อมูลเดิม — เป็นบิลใหม่');
-      historyBox.style.display = 'none';
-    } else {
-      lookupStatus.innerHTML = statusHtml('ok', 'พบข้อมูลลูกค้า: ' + (res.customerName || '-'));
-      renderHistory(res.stations);
-      historyBox.style.display = 'block';
+    function switchCamera() {
+      const deviceId = document.getElementById("cameraSelect").value;
+      CameraModule.startCamera(deviceId);
     }
-  } catch (err) {
-    lookupStatus.innerHTML = statusHtml('error', err.message);
-  }
-  renderGallery();
-});
 
-function renderHistory(stations) {
-  const labels = { station1: 'Station 1', station2: 'Station 2', station3: 'Station 3' };
-  historyRows.innerHTML = Object.keys(labels).map(key => {
-    const st = stations[key];
-    const thumbs = (st && st.thumbs) || [];
-    return `<div class="history-row">
-      <div class="label">${labels[key]}</div>
-      <div class="thumbs">
-        ${thumbs.length
-          ? thumbs.map(u => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}"></a>`).join('')
-          : '<span class="empty">ยังไม่ถ่าย</span>'}
-      </div>
-    </div>`;
-  }).join('');
-}
+    // ถ่ายภาพพร้อมย่อขนาดให้พอดี (กว้าง 640px) ไม่ให้หนักระบบ
+    function takeSnapshot() {
+      const video = document.getElementById("videoElement");
+      const canvas = document.createElement("canvas");
+      const targetWidth = 640;
+      const scale = targetWidth / video.videoWidth;
+      canvas.width = targetWidth;
+      canvas.height = video.videoHeight * scale;
 
-// ---------- บันทึก ----------
-submitBtn.addEventListener('click', async () => {
-  if (!currentBill || pendingPhotos.length === 0) return;
-  submitBtn.disabled = true;
-  submitStatus.innerHTML = statusHtml('info', 'กำลังบันทึก...');
-  try {
-    const res = await callGas('saveStation', {
-      billNumber: currentBill,
-      station: STATION,
-      photos: pendingPhotos.map(p => ({
-        mimeType: p.mimeType, original: p.original, thumbnail: p.thumbnail,
-      })),
-    });
-    submitStatus.innerHTML = statusHtml('ok', 'บันทึกสำเร็จ ' + res.thumbs.length + ' รูป');
-    // รีเซ็ตสำหรับลูกค้าถัดไป
-    pendingPhotos = [];
-    currentBill = null;
-    billInput.value = '';
-    historyBox.style.display = 'none';
-    lookupStatus.innerHTML = '';
-    renderGallery();
-    billInput.focus();
-  } catch (err) {
-    submitStatus.innerHTML = statusHtml('error', err.message);
-    submitBtn.disabled = false;
-  }
-});
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-function statusHtml(type, msg) {
-  return `<div class="status ${type}">${msg}</div>`;
-}
+      const smallDataUrl = canvas.toDataURL("image/jpeg", 0.7); // ย่อขนาดและบีบอัด 70%
+      capturedImages.push(smallDataUrl);
+      renderCapturedThumbs();
+    }
 
-initCameras();
-</script>
+    function removeSnapshot(idx) {
+      capturedImages.splice(idx, 1);
+      renderCapturedThumbs();
+    }
+
+    function renderCapturedThumbs() {
+      const list = document.getElementById("capturedList");
+      list.innerHTML = "";
+      capturedImages.forEach((dataUrl, idx) => {
+        const div = document.createElement("div");
+        div.className = "thumb-wrap";
+        div.innerHTML = `
+          <img src="${dataUrl}">
+          <button onclick="removeSnapshot(${idx})">X</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    // สแกนเลขบิลเพื่อดึงรูปจากสถานีอื่นมาเทียบหน้า
+    async function searchBill() {
+      const billNo = document.getElementById("billInput").value.trim();
+      if (!billNo) return;
+
+      const cust = await Api.getCustomer(billNo);
+      const compareBox = document.getElementById("compareArea");
+      const compareImages = document.getElementById("compareImages");
+      compareImages.innerHTML = "";
+
+      if (cust) {
+        let otherThumbs = [];
+        for (let i = 1; i <= 3; i++) {
+          if (i.toString() !== stationId && cust[`station${i}_thumbs`]) {
+            otherThumbs = otherThumbs.concat(cust[`station${i}_thumbs`]);
+          }
+        }
+
+        if (otherThumbs.length > 0) {
+          otherThumbs.forEach(url => {
+            const img = document.createElement("img");
+            img.src = url;
+            img.style.width = "100px";
+            img.style.height = "100px";
+            img.style.objectFit = "cover";
+            img.style.borderRadius = "6px";
+            compareImages.appendChild(img);
+          });
+          compareBox.style.display = "block";
+        } else {
+          compareBox.style.display = "none";
+        }
+      } else {
+        compareBox.style.display = "none";
+      }
+    }
+
+    // บันทึกรูปย่อเข้า Supabase
+    async function saveData() {
+      const billNo = document.getElementById("billInput").value.trim();
+      if (!billNo) { alert("กรุณาระบุเลขบิล"); return; }
+      if (capturedImages.length === 0) { alert("กรุณาถ่ายรูปอย่างน้อย 1 รูป"); return; }
+
+      const btn = document.getElementById("btnSave");
+      btn.innerText = "กำลังบันทึก...";
+      btn.disabled = true;
+
+      try {
+        const uploadedUrls = [];
+        for (let i = 0; i < capturedImages.length; i++) {
+          const url = await Api.uploadImage(billNo, stationId, capturedImages[i], i);
+          uploadedUrls.push(url);
+        }
+
+        await Api.saveStation(billNo, stationId, uploadedUrls);
+        alert("บันทึกสำเร็จ!");
+        
+        // เคลียร์หน้าจอพร้อมบิลถัดไป
+        capturedImages = [];
+        renderCapturedThumbs();
+        document.getElementById("billInput").value = "";
+        document.getElementById("compareArea").style.display = "none";
+      } catch (err) {
+        alert("เกิดข้อผิดพลาด: " + err.message);
+      } finally {
+        btn.innerText = "บันทึกข้อมูลสถานี";
+        btn.disabled = false;
+      }
+    }
+  </script>
 </body>
 </html>
