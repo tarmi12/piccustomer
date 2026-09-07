@@ -10,18 +10,19 @@
   <script src="shared/api.js"></script>
   <script src="shared/camera.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 16px; max-width: 800px; margin: auto; }
+    body { font-family: sans-serif; padding: 16px; max-width: 800px; margin: auto; background-color: #f4f7f4; }
     .station-header { background: #2e7d32; color: #fff; padding: 12px; border-radius: 8px; text-align: center; }
-    .camera-container { margin: 16px 0; text-align: center; }
+    .camera-container { margin: 16px 0; text-align: center; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #ddd; }
     video { width: 100%; max-width: 480px; height: auto; border-radius: 8px; background: #000; }
     .preview-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .thumb-wrap { position: relative; width: 100px; height: 100px; }
     .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
-    .thumb-wrap button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; cursor: pointer; }
+    .thumb-wrap button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; border-radius: 0 0 0 6px; cursor: pointer; padding: 2px 6px; font-size: 12px; }
     .compare-box { margin-top: 20px; padding: 12px; border: 1px dashed #4caf50; border-radius: 8px; background: #f9fff9; }
     .btn-large { padding: 12px 24px; font-size: 16px; border-radius: 6px; border: none; cursor: pointer; }
-    .btn-green { background: #2e7d32; color: #fff; }
+    .btn-green { background: #2e7d32; color: #fff; font-weight: bold; }
     .btn-blue { background: #1976d2; color: #fff; }
+    .btn-orange { background: #f57c00; color: #fff; }
   </style>
 </head>
 <body>
@@ -30,36 +31,43 @@
     <h2 id="stationTitle">สถานีถ่ายภาพ</h2>
   </div>
 
-  <div style="margin-top: 16px;">
+  <div style="margin-top: 16px; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #ddd;">
     <label><strong>สแกน / กรอกเลขบิล:</strong></label><br>
-    <input type="text" id="billInput" placeholder="กรอกเลขบิล..." style="width: 70%; padding: 10px; font-size: 18px;" onkeypress="if(event.key==='Enter') searchBill()">
-    <button class="btn-large btn-blue" onclick="searchBill()">ค้นหาบิล</button>
+    <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <input type="text" id="billInput" placeholder="กรอกเลขบิล..." style="flex: 1; padding: 10px; font-size: 18px;" onkeypress="if(event.key==='Enter') handleBillEnter()">
+      <button id="btnSearch" class="btn-large btn-blue" onclick="searchBill()">ค้นหาบิล</button>
+    </div>
+    <small style="color: #666; margin-top: 4px; display: block;">* สำหรับ Station 1 พิมพ์เลขบิลแล้วถ่ายรูปได้เลย ไม่จำเป็นต้องกดค้นหา</small>
   </div>
 
-  <!-- โซนเทียบรูปเดิมจากสถานีอื่น -->
-  <div id="compareArea" class="compare-box" style="display:none;">
+  <!-- โซนรูปเทียบหน้าจากสถานีอื่น -->
+  <div id="compareArea" class="compare-box" style="display: none;">
     <h4>รูปที่เคยถ่ายจากสถานีอื่น (สำหรับเทียบหน้า):</h4>
-    <div id="compareImages" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+    <div id="compareImages" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
   </div>
 
-  <!-- โซนกล้อง -->
+  <!-- โซนกล้องถ่ายภาพ -->
   <div class="camera-container">
-    <label>เลือกกล้อง: </label>
-    <select id="cameraSelect" onchange="switchCamera()" style="padding: 6px;"></select>
-    <br><br>
+    <div style="margin-bottom: 10px;">
+      <label><strong>เลือกกล้อง: </strong></label>
+      <select id="cameraSelect" onchange="switchCamera()" style="padding: 6px; min-width: 200px;"></select>
+      <button onclick="startCameraManual()" style="padding: 6px 12px; margin-left: 8px; cursor: pointer;">เปิดกล้อง</button>
+      <button onclick="stopCamera()" style="padding: 6px 12px; margin-left: 4px; background: #757575; color: #fff; border: none; border-radius: 4px; cursor: pointer;">ปิดกล้อง</button>
+    </div>
+    
     <video id="videoElement" autoplay playsinline></video>
-    <br>
-    <button class="btn-large btn-blue" onclick="takeSnapshot()">📸 ถ่ายรูป</button>
+    <br><br>
+    <button class="btn-large btn-orange" onclick="takeSnapshot()">📸 ถ่ายรูป</button>
   </div>
 
-  <!-- รูปที่เพิ่งถ่าย -->
-  <div>
-    <h4>รูปที่ถ่ายรอบนี้:</h4>
-    <div id="capturedList" class="preview-list"></div>
+  <!-- รูปที่เพิ่งถ่ายในรอบนี้ -->
+  <div style="background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #ddd;">
+    <h4>รูปที่ถ่ายรอบนี้ (Station นี้):</h4>
+    <div id="capturedList" class="preview-list">ยังไม่มีรูปถ่าย</div>
   </div>
 
   <div style="margin-top: 20px;">
-    <button id="btnSave" class="btn-large btn-green" style="width: 100%;" onclick="saveData()">บันทึกข้อมูลสถานี</button>
+    <button id="btnSave" class="btn-large btn-green" style="width: 100%; font-size: 18px;" onclick="saveData()">💾 บันทึกข้อมูลสถานี</button>
   </div>
 
   <script>
@@ -67,21 +75,59 @@
     const stationId = urlParams.get('station') || '1';
     document.getElementById("stationTitle").innerText = `สถานีถ่ายภาพที่ ${stationId}`;
 
-    let capturedImages = []; // เก็บ Data URL รูปย่อ
+    // ซ่อนปุ่มค้นหาสำหรับ Station 1 (เพราะเป็นบิลใหม่)
+    if (stationId === '1') {
+      document.getElementById("btnSearch").style.display = "none";
+    }
 
-    // เริ่มต้นกล้อง
-    window.addEventListener("DOMContentLoaded", async () => {
+    let capturedImages = [];
+    let isCameraActive = false;
+
+    // ฟังก์ชันเปิดกล้อง
+    async function startCameraManual() {
       await CameraModule.init('cameraSelect', 'videoElement');
-    });
+      isCameraActive = true;
+    }
+
+    // ฟังก์ชันปิดกล้องและตัดไฟสัญญาณ
+    function stopCamera() {
+      if (CameraModule && CameraModule.stream) {
+        CameraModule.stream.getTracks().forEach(track => track.stop());
+        CameraModule.stream = null;
+        isCameraActive = false;
+      }
+    }
 
     function switchCamera() {
       const deviceId = document.getElementById("cameraSelect").value;
-      CameraModule.startCamera(deviceId);
+      if (deviceId) {
+        CameraModule.startCamera(deviceId);
+      }
     }
 
-    // ถ่ายภาพพร้อมย่อขนาดให้พอดี (กว้าง 640px) ไม่ให้หนักระบบ
-    function takeSnapshot() {
+    async function handleBillEnter() {
+      if (stationId === '1') {
+        // Station 1: ถ้ายังไม่เปิดกล้อง ให้เปิดกล้องอัตโนมัติ
+        if (!isCameraActive) await startCameraManual();
+      } else {
+        await searchBill();
+      }
+    }
+
+    // ถ่ายภาพพร้อมย่อขนาด (กว้าง 640px)
+    async function takeSnapshot() {
+      // ถ้ากล้องยังไม่เปิด ให้เปิดให้อัตโนมัติ
+      if (!isCameraActive) {
+        await startCameraManual();
+        return;
+      }
+
       const video = document.getElementById("videoElement");
+      if (!video.videoWidth) {
+        alert("กรุณารอภาพจากกล้องขึ้นจอให้ชัดเจนก่อนกดถ่ายครับ");
+        return;
+      }
+
       const canvas = document.createElement("canvas");
       const targetWidth = 640;
       const scale = targetWidth / video.videoWidth;
@@ -91,7 +137,7 @@
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const smallDataUrl = canvas.toDataURL("image/jpeg", 0.7); // ย่อขนาดและบีบอัด 70%
+      const smallDataUrl = canvas.toDataURL("image/jpeg", 0.7);
       capturedImages.push(smallDataUrl);
       renderCapturedThumbs();
     }
@@ -104,6 +150,10 @@
     function renderCapturedThumbs() {
       const list = document.getElementById("capturedList");
       list.innerHTML = "";
+      if (capturedImages.length === 0) {
+        list.innerText = "ยังไม่มีรูปถ่าย";
+        return;
+      }
       capturedImages.forEach((dataUrl, idx) => {
         const div = document.createElement("div");
         div.className = "thumb-wrap";
@@ -115,10 +165,13 @@
       });
     }
 
-    // สแกนเลขบิลเพื่อดึงรูปจากสถานีอื่นมาเทียบหน้า
+    // ค้นหาบิลเพื่อดึงรูปจากสถานีอื่นมาเทียบ (สำหรับ Station 2 และ 3)
     async function searchBill() {
       const billNo = document.getElementById("billInput").value.trim();
-      if (!billNo) return;
+      if (!billNo) { alert("กรุณากรอกเลขบิล"); return; }
+
+      // เปิดกล้องเตรียมพร้อมถ่าย
+      if (!isCameraActive) await startCameraManual();
 
       const cust = await Api.getCustomer(billNo);
       const compareBox = document.getElementById("compareArea");
@@ -141,18 +194,21 @@
             img.style.height = "100px";
             img.style.objectFit = "cover";
             img.style.borderRadius = "6px";
+            img.style.border = "1px solid #aaa";
             compareImages.appendChild(img);
           });
           compareBox.style.display = "block";
         } else {
           compareBox.style.display = "none";
+          alert("พบข้อมูลบิล แต่ยังไม่มีรูปถ่ายจากสถานีอื่น");
         }
       } else {
         compareBox.style.display = "none";
+        alert("ไม่พบข้อมูลบิลนี้ในระบบ");
       }
     }
 
-    // บันทึกรูปย่อเข้า Supabase
+    // บันทึกรูปย่อลง Supabase
     async function saveData() {
       const billNo = document.getElementById("billInput").value.trim();
       if (!billNo) { alert("กรุณาระบุเลขบิล"); return; }
@@ -170,9 +226,10 @@
         }
 
         await Api.saveStation(billNo, stationId, uploadedUrls);
-        alert("บันทึกสำเร็จ!");
-        
-        // เคลียร์หน้าจอพร้อมบิลถัดไป
+        alert("บันทึกข้อมูลสถานีสำเร็จ!");
+
+        // ปิดกล้องทันที และเคลียร์หน้าจอพร้อมบิลถัดไป
+        stopCamera();
         capturedImages = [];
         renderCapturedThumbs();
         document.getElementById("billInput").value = "";
@@ -180,10 +237,15 @@
       } catch (err) {
         alert("เกิดข้อผิดพลาด: " + err.message);
       } finally {
-        btn.innerText = "บันทึกข้อมูลสถานี";
+        btn.innerText = "💾 บันทึกข้อมูลสถานี";
         btn.disabled = false;
       }
     }
+
+    // ปิดกล้องทันทีหากมีการปิดหน้าต่างเว็บ
+    window.addEventListener("beforeunload", () => {
+      stopCamera();
+    });
   </script>
 </body>
 </html>
