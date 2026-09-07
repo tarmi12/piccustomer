@@ -1,3 +1,7 @@
-// config.js
-// แก้ค่าเดียวตรงนี้หลัง deploy GAS เป็น Web App แล้ว (ได้ URL ลงท้ายด้วย /exec)
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxXtnOH5dzGwiNaRQHIxEWA1ihXd5fuKHQoFf3lGs3WWJpCwQasWij10bvUpSQ_rkhk/exec';
+// นำ URL และ anon key จาก Supabase ในขั้นตอนที่ 2.5 มาใส่
+const SUPABASE_URL = "https://ogxtigkvejisuycaqdxo.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9neHRpZ2t2ZWppc3V5Y2FxZHhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3NDA2MDEsImV4cCI6MjEwNDMxNjYwMX0.iLn5y3kzxGcilZxrt6G91tj22M6QH-a72SsjnVTBDFA";
+const STORAGE_BUCKET = "customer-images";
+
+// นำ Web App URL จาก Google Apps Script ในขั้นตอนที่ 1.2 มาใส่
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyXp4n00Si6dfH0iQxtt5mPAWuna3LjYs0dyGlnkk572qjqCRL2oTN8c0mg8SJxG_5K/exec";
