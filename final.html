@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Final - สแกนรับเงินและรายงาน</title>
+  <title>Final - ระบบรับเงินและรายงาน</title>
   <link rel="stylesheet" href="shared/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="shared/config.js"></script>
+  <script src="shared/camera.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: auto; }
+    body { font-family: sans-serif; padding: 16px; max-width: 950px; margin: auto; background-color: #f4f7f4; }
     .login-box { max-width: 360px; margin: 80px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); text-align: center; }
     .tabs-nav { display: flex; gap: 8px; margin: 16px 0; border-bottom: 2px solid #ddd; padding-bottom: 8px; }
     .tab-btn { flex: 1; padding: 12px; border: none; background: #e0e0e0; cursor: pointer; border-radius: 8px; font-size: 15px; font-weight: bold; }
@@ -18,14 +19,22 @@
     .station-block { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 12px; background: #fafafa; }
     .img-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .img-thumb { width: 110px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid #bbb; }
-    table.report-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    table.report-table th, table.report-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-    table.report-table th { background: #f0f0f0; }
+    .thumb-wrap { position: relative; width: 110px; height: 110px; }
+    .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+    .thumb-wrap button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; border-radius: 0 0 0 6px; cursor: pointer; padding: 2px 6px; font-size: 12px; }
+    table.report-table { width: 100%; border-collapse: collapse; margin-top: 12px; background: #fff; }
+    table.report-table th, table.report-table td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+    table.report-table th { background: #e8f5e9; }
+    .camera-box { background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #c8e6c9; margin: 16px 0; }
+    video { width: 100%; max-width: 360px; height: auto; border-radius: 6px; background: #000; }
+    /* Modal สำหรับเปิดดูรูปขยาย */
+    .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); overflow: auto; }
+    .modal-content { background: #fff; margin: 5% auto; padding: 20px; border-radius: 8px; max-width: 750px; width: 90%; }
   </style>
 </head>
 <body>
 
-  <!-- ส่วนที่ 1: หน้าต่าง Login -->
+  <!-- 1. ส่วน Login -->
   <div id="loginSection" class="login-box">
     <h2>เข้าสู่ระบบ (Final)</h2>
     <input type="text" id="loginUser" placeholder="ชื่อผู้ใช้" style="width: 90%; padding: 10px; margin: 8px 0; font-size: 16px;"><br>
@@ -34,7 +43,7 @@
     <p id="loginError" style="color: red; margin-top: 8px; display: none;">ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</p>
   </div>
 
-  <!-- ส่วนที่ 2: เมนูหลัก 3 แท็บ -->
+  <!-- 2. เมนูหลัก -->
   <div id="mainSection" style="display: none;">
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <h2>ระบบรับเงินและรายงาน (Final)</h2>
@@ -56,12 +65,26 @@
 
       <div id="billInfo" style="display: none;">
         <h3 id="displayBillNumber" style="color: #2e7d32;"></h3>
+        
+        <!-- รูปที่ถ่ายมาจากสถานี 1-3 -->
         <div class="station-block"><h4>รูป Station 1:</h4><div id="st1Images" class="img-grid">ไม่มีรูป</div></div>
         <div class="station-block"><h4>รูป Station 2:</h4><div id="st2Images" class="img-grid">ไม่มีรูป</div></div>
         <div class="station-block"><h4>รูป Station 3:</h4><div id="st3Images" class="img-grid">ไม่มีรูป</div></div>
 
-        <button id="btnConfirmPay" onclick="confirmPaymentAndUploadDrive()" style="width: 100%; padding: 14px; background: #2e7d32; color: #fff; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer;">
-          ยืนยันรับเงินแล้ว (บันทึกรูปทั้งหมดลง Google Drive)
+        <!-- จุดถ่ายภาพตอนรับเงิน และ ถ่ายบัตรประชาชน (สูงสุด 3 รูป) -->
+        <div class="camera-box">
+          <h4>📸 ถ่ายรูปตอนรับเงิน / บัตรประชาชน (สูงสุด 3 รูป):</h4>
+          <div style="margin: 8px 0;">
+            <select id="cameraSelect" onchange="CameraModule.startCamera(this.value)" style="padding: 6px;"></select>
+          </div>
+          <video id="videoElement" autoplay playsinline></video><br>
+          <button onclick="takeFinalSnapshot()" style="padding: 8px 16px; background: #0288d1; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-top: 6px;">ถ่ายรูป (รับเงิน/บัตร)</button>
+          
+          <div id="finalCapturedList" class="img-grid" style="margin-top: 10px;"></div>
+        </div>
+
+        <button id="btnConfirmPay" onclick="confirmPaymentAndUploadDrive()" style="width: 100%; padding: 14px; background: #2e7d32; color: #fff; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 12px;">
+          ยืนยันรับเงินแล้ว (ส่งรูปทั้งหมดเข้า Google Drive)
         </button>
       </div>
       <div id="tab1Loading" style="display: none; color: #d32f2f; font-weight: bold; margin-top: 10px;">กำลังส่งรูปเข้า Google Drive กรุณารอสักครู่...</div>
@@ -70,7 +93,7 @@
     <!-- แท็บ 2: รายงานวันนี้ -->
     <div id="tab2" class="tab-content">
       <h3>รายการบิลวันนี้ (จาก Supabase)</h3>
-      <button onclick="loadTodayReport()" style="padding: 6px 12px; margin-bottom: 8px;">รีเฟรชข้อมูล</button>
+      <button onclick="loadTodayReport()" style="padding: 6px 12px; margin-bottom: 8px; cursor: pointer;">รีเฟรชข้อมูล</button>
       <table class="report-table">
         <thead>
           <tr>
@@ -79,15 +102,16 @@
             <th>เวลา St.2</th>
             <th>เวลา St.3</th>
             <th>สถานะ</th>
+            <th>รูปภาพ</th>
           </tr>
         </thead>
         <tbody id="todayReportBody">
-          <tr><td colspan="5" style="text-align: center;">กำลังโหลดข้อมูล...</td></tr>
+          <tr><td colspan="6" style="text-align: center;">กำลังโหลดข้อมูล...</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- แท็บ 3: รายงานย้อนหลัง -->
+    <!-- แท็บ 3: รายงานย้อนหลัง Google Drive -->
     <div id="tab3" class="tab-content">
       <h3>ค้นหารูปย้อนหลัง (จาก Google Drive)</h3>
       <div style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -99,13 +123,25 @@
     </div>
   </div>
 
+  <!-- กล่องแสดงรูปป๊อปอัปสำหรับดูรายละเอียดในรายงานวันนี้ -->
+  <div id="reportModal" class="modal">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 id="modalBillTitle">รายละเอียดรูปภาพ</h3>
+        <button onclick="closeModal()" style="padding: 4px 10px; cursor: pointer; background: red; color: #fff; border: none; border-radius: 4px;">ปิด</button>
+      </div>
+      <div id="modalImagesContainer" style="margin-top: 12px;"></div>
+    </div>
+  </div>
+
   <script>
-    // รหัสผ่านเข้าใช้งาน (เปลี่ยนได้ตามต้องการ)
     const AUTH_USER = "admin";
     const AUTH_PASS = "1234";
 
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentBillData = null;
+    let finalCapturedImages = []; // เก็บ Data URL รูปรับเงิน/บัตรประชาชน (สูงสุด 3 รูป)
+    let todayBillsCache = [];
 
     if (sessionStorage.getItem("isLoggedIn") === "true") {
       showMain();
@@ -130,6 +166,8 @@
     function showMain() {
       document.getElementById("loginSection").style.display = "none";
       document.getElementById("mainSection").style.display = "block";
+      // เปิดกล้องที่หน้า Final อัตโนมัติ
+      CameraModule.init('cameraSelect', 'videoElement');
     }
 
     function switchTab(tabId, btn) {
@@ -139,6 +177,7 @@
       btn.classList.add("active");
     }
 
+    // --- ฟังก์ชันแท็บ 1 ---
     async function searchBillForPayment() {
       const billNo = document.getElementById("scanBillInput").value.trim();
       if (!billNo) return;
@@ -154,6 +193,9 @@
       renderStationThumbs("st1Images", data.station1_thumbs);
       renderStationThumbs("st2Images", data.station2_thumbs);
       renderStationThumbs("st3Images", data.station3_thumbs);
+      
+      finalCapturedImages = [];
+      renderFinalThumbs();
       document.getElementById("billInfo").style.display = "block";
     }
 
@@ -166,6 +208,45 @@
         img.src = url;
         img.className = "img-thumb";
         el.appendChild(img);
+      });
+    }
+
+    function takeFinalSnapshot() {
+      if (finalCapturedImages.length >= 3) {
+        alert("ถ่ายรูปได้สูงสุด 3 รูปเท่านั้นครับ");
+        return;
+      }
+      const video = document.getElementById("videoElement");
+      const canvas = document.createElement("canvas");
+      const targetWidth = 640;
+      const scale = targetWidth / video.videoWidth;
+      canvas.width = targetWidth;
+      canvas.height = video.videoHeight * scale;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const smallDataUrl = canvas.toDataURL("image/jpeg", 0.7);
+      finalCapturedImages.push(smallDataUrl);
+      renderFinalThumbs();
+    }
+
+    function removeFinalSnapshot(idx) {
+      finalCapturedImages.splice(idx, 1);
+      renderFinalThumbs();
+    }
+
+    function renderFinalThumbs() {
+      const list = document.getElementById("finalCapturedList");
+      list.innerHTML = "";
+      finalCapturedImages.forEach((dataUrl, idx) => {
+        const div = document.createElement("div");
+        div.className = "thumb-wrap";
+        div.innerHTML = `
+          <img src="${dataUrl}">
+          <button onclick="removeFinalSnapshot(${idx})">X</button>
+        `;
+        list.appendChild(div);
       });
     }
 
@@ -186,17 +267,30 @@
       document.getElementById("btnConfirmPay").disabled = true;
 
       try {
+        // 1. อัปโหลดรูปรับเงิน/บัตรประชาชน ขึ้น Supabase Storage ก่อน
+        const finalUploadedUrls = [];
+        for (let i = 0; i < finalCapturedImages.length; i++) {
+          const res = await fetch(finalCapturedImages[i]);
+          const blob = await res.blob();
+          const filePath = `${currentBillData.bill_number}/final/${Date.now()}_${i + 1}.jpg`;
+          await db.storage.from(STORAGE_BUCKET).upload(filePath, blob, { contentType: "image/jpeg", upsert: true });
+          const { data: pData } = db.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
+          finalUploadedUrls.push(pData.publicUrl);
+        }
+
+        // 2. รวบรวมรูปทั้งหมด (St.1, St.2, St.3 + Final) ส่งเข้า Google Drive
         const allUrls = [
           ...(currentBillData.station1_thumbs || []),
           ...(currentBillData.station2_thumbs || []),
-          ...(currentBillData.station3_thumbs || [])
+          ...(currentBillData.station3_thumbs || []),
+          ...finalUploadedUrls
         ];
 
         const imagesPayload = [];
         for (let i = 0; i < allUrls.length; i++) {
           const b64 = await urlToBase64(allUrls[i]);
           imagesPayload.push({
-            name: `st_${i + 1}.jpg`,
+            name: `img_${i + 1}.jpg`,
             base64: b64
           });
         }
@@ -214,14 +308,18 @@
           });
         }
 
+        // 3. บันทึกสถานะ PAID และบันทึก URL รูป Final ลง Supabase
         await db.from("customers").update({
           final_status: "PAID",
+          final_thumbs: finalUploadedUrls,
           final_time: new Date().toISOString()
         }).eq("bill_number", currentBillData.bill_number);
 
-        alert("บันทึกรับเงินและส่งรูปเข้า Google Drive เรียบร้อยแล้ว!");
+        alert("บันทึกรับเงิน และสำรองรูปเข้า Google Drive เรียบร้อยแล้ว!");
         document.getElementById("billInfo").style.display = "none";
         document.getElementById("scanBillInput").value = "";
+        finalCapturedImages = [];
+        renderFinalThumbs();
       } catch (err) {
         alert("เกิดข้อผิดพลาด: " + err.message);
       } finally {
@@ -230,9 +328,10 @@
       }
     }
 
+    // --- ฟังก์ชันแท็บ 2: รายงานวันนี้ ---
     async function loadTodayReport() {
       const tbody = document.getElementById("todayReportBody");
-      tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>กำลังโหลด...</td></tr>";
+      tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>กำลังโหลด...</td></tr>";
 
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
@@ -243,12 +342,13 @@
         .order("created_at", { ascending: false });
 
       if (error || !data || data.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>ไม่มีรายการของวันนี้</td></tr>";
+        tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>ไม่มีรายการของวันนี้</td></tr>";
         return;
       }
 
+      todayBillsCache = data;
       tbody.innerHTML = "";
-      data.forEach(row => {
+      data.forEach((row, idx) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td><strong>${row.bill_number}</strong></td>
@@ -256,11 +356,39 @@
           <td>${row.station2_time ? new Date(row.station2_time).toLocaleTimeString() : '-'}</td>
           <td>${row.station3_time ? new Date(row.station3_time).toLocaleTimeString() : '-'}</td>
           <td>${row.final_status === 'PAID' ? '<span style="color:green;font-weight:bold;">รับเงินแล้ว</span>' : 'รอดำเนินการ'}</td>
+          <td><button onclick="viewReportDetail(${idx})" style="padding: 4px 8px; background: #2e7d32; color: #fff; border: none; border-radius: 4px; cursor: pointer;">ดูรูปทั้งหมด</button></td>
         `;
         tbody.appendChild(tr);
       });
     }
 
+    function viewReportDetail(index) {
+      const bill = todayBillsCache[index];
+      if (!bill) return;
+
+      document.getElementById("modalBillTitle").innerText = `รูปภาพบิล: ${bill.bill_number}`;
+      const container = document.getElementById("modalImagesContainer");
+      container.innerHTML = "";
+
+      const makeSection = (title, urls) => {
+        if (!urls || urls.length === 0) return "";
+        let imgs = urls.map(u => `<img src="${u}" class="img-thumb" style="margin-right:6px;">`).join("");
+        return `<div style="margin-bottom: 12px;"><strong>${title}:</strong><div class="img-grid">${imgs}</div></div>`;
+      };
+
+      container.innerHTML += makeSection("สถานี 1", bill.station1_thumbs);
+      container.innerHTML += makeSection("สถานี 2", bill.station2_thumbs);
+      container.innerHTML += makeSection("สถานี 3", bill.station3_thumbs);
+      container.innerHTML += makeSection("รูปรับเงิน / บัตรประชาชน (Final)", bill.final_thumbs);
+
+      document.getElementById("reportModal").style.display = "block";
+    }
+
+    function closeModal() {
+      document.getElementById("reportModal").style.display = "none";
+    }
+
+    // --- ฟังก์ชันแท็บ 3: รายงานย้อนหลัง Drive ---
     async function searchDriveBill() {
       const billNo = document.getElementById("driveBillInput").value.trim();
       if (!billNo) return;
@@ -274,10 +402,7 @@
         const res = await fetch(GOOGLE_SCRIPT_URL, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "getBillImages",
-            billNumber: billNo
-          })
+          body: JSON.stringify({ action: "getBillImages", billNumber: billNo })
         });
 
         const result = await res.json();
