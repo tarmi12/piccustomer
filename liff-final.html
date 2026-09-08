@@ -14,9 +14,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #f0f2f5; padding: 12px; }
     .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px; }
-    .scanner-box { position: relative; width: 100%; max-width: 400px; height: 240px; margin: auto; overflow: hidden; border-radius: 8px; background: #000; }
+    .scanner-box { position: relative; width: 100%; max-width: 420px; height: 240px; margin: auto; overflow: hidden; border-radius: 8px; background: #000; }
     video { width: 100%; height: 100%; object-fit: cover; }
-    .laser-guide { position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: red; box-shadow: 0 0 4px red; }
+    .laser-guide { position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: red; box-shadow: 0 0 6px red; }
     .btn { width: 100%; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; margin-top: 8px; }
     .btn-green { background: #2e7d32; color: #fff; }
     .btn-blue { background: #1976d2; color: #fff; }
@@ -25,10 +25,11 @@
     input[type="text"] { width: 100%; padding: 12px; font-size: 18px; border: 1px solid #ccc; border-radius: 8px; text-align: center; margin-top: 6px; }
     .preview-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .thumb-box { position: relative; width: 80px; height: 80px; }
-    .thumb-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+    .thumb-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; }
     .thumb-box button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; border-radius: 0 0 0 6px; width: 20px; height: 20px; }
     .station-block { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 8px; }
     .station-block h5 { margin-bottom: 6px; color: #333; }
+    .status-log { font-size: 13px; color: #d32f2f; text-align: center; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -41,9 +42,9 @@
 
     <!-- ขั้นที่ 1: สแกนบาร์โค้ดบิล -->
     <div id="stepScan">
-      <p style="text-align: center; font-size: 14px; color: #555; margin-bottom: 8px;">เล็งแท่งบาร์โค้ดเพื่อค้นหาบิล</p>
+      <p style="text-align: center; font-size: 14px; color: #555; margin-bottom: 8px;">สแกนบาร์โค้ดเพื่อค้นหาบิล</p>
       <div class="scanner-box">
-        <video id="scanVideo"></video>
+        <video id="scanVideo" playsinline></video>
         <div class="laser-guide"></div>
       </div>
       <div style="margin-top: 14px; text-align: center;">
@@ -75,26 +76,53 @@
         <button id="btnPay" class="btn btn-green" onclick="confirmPayment()">✅ ยืนยันรับเงิน (บันทึกลง Google Drive)</button>
         <button class="btn btn-outline" onclick="resetScan()">สแกนบิลอื่น</button>
       </div>
-      <p id="loadingText" style="display:none; color: red; font-weight: bold; text-align: center; margin-top: 8px;">กำลังส่งรูปเข้า Google Drive...</p>
+      <p id="finalLog" class="status-log"></p>
     </div>
   </div>
 
   <script>
+    const FINAL_LIFF_ID = "2011506265-LZD82myR";
     let db = null;
     let codeReader = null;
     let currentBillData = null;
     let finalImages = [];
     let finalStream = null;
 
+    function dataURLtoBlob(dataurl) {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new Blob([u8arr], { type: mime });
+    }
+
     window.onload = async () => {
-      db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      try {
+        db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } catch (err) {
+        alert("ตั้งค่า SUPABASE_URL ไม่ถูกต้อง กรุณาตรวจสอบ config.js");
+        return;
+      }
+
+      try {
+        if (typeof liff !== "undefined") {
+          await liff.init({ liffId: FINAL_LIFF_ID });
+        }
+      } catch (e) {
+        console.warn("LIFF Init failed, fallback to web:", e);
+      }
+
       startScanner();
     };
 
     function startScanner() {
       codeReader = new ZXing.BrowserMultiFormatReader();
       codeReader.decodeFromVideoDevice(null, 'scanVideo', (result, err) => {
-        if (result) {
+        if (result && result.text) {
           fetchBill(result.text);
         }
       });
@@ -102,7 +130,7 @@
 
     function useManualBill() {
       const val = document.getElementById("manualBillInput").value.trim();
-      if (!val) return;
+      if (!val) { alert("กรุณากรอกเลขบิล"); return; }
       fetchBill(val);
     }
 
@@ -112,9 +140,9 @@
         codeReader = null;
       }
 
-      const { data, error } = await db.from("customers").select("*").eq("bill_number", billNo).single();
+      const { data, error } = await db.from("customers").select("*").eq("bill_number", billNo).maybeSingle();
       if (error || !data) {
-        alert("ไม่พบเลขบิลนี้ในระบบ");
+        alert("ไม่พบข้อมูลของบิล: " + billNo);
         startScanner();
         return;
       }
@@ -164,8 +192,11 @@
       }
       const video = document.getElementById("finalVideo");
       const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = (video.videoHeight / video.videoWidth) * 640;
+      const targetWidth = 640;
+      const scale = targetWidth / video.videoWidth;
+      canvas.width = targetWidth;
+      canvas.height = video.videoHeight * scale;
+
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -189,6 +220,7 @@
       });
     }
 
+    // แปลงภาพ Public URL จาก Supabase กลับเป็น Base64 ส่งให้ Google Apps Script
     async function urlToBase64(url) {
       const res = await fetch(url);
       const blob = await res.blob();
@@ -200,22 +232,31 @@
     }
 
     async function confirmPayment() {
-      document.getElementById("btnPay").disabled = true;
-      document.getElementById("loadingText").style.display = "block";
+      const btn = document.getElementById("btnPay");
+      const log = document.getElementById("finalLog");
+      log.innerText = "";
+      btn.disabled = true;
+      btn.innerText = "กำลังบันทึกรูป Final...";
 
       try {
-        // 1. อัปโหลดรูป Final ขึ้น Supabase
+        // 1. อัปโหลดรูป Final ขึ้น Supabase Storage
         const finalUrls = [];
         for (let i = 0; i < finalImages.length; i++) {
-          const res = await fetch(finalImages[i]);
-          const blob = await res.blob();
+          const blob = dataURLtoBlob(finalImages[i]);
           const filePath = `${currentBillData.bill_number}/final/${Date.now()}_${i+1}.jpg`;
-          await db.storage.from(STORAGE_BUCKET).upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+          const { error: upErr } = await db.storage
+            .from(STORAGE_BUCKET)
+            .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+          if (upErr) throw new Error("Storage Upload Final Error: " + upErr.message);
+
           const { data: pData } = db.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
           finalUrls.push(pData.publicUrl);
         }
 
-        // 2. รวบรวมรูปทั้งหมดส่งเข้า Google Drive
+        btn.innerText = "กำลังส่งรูปเข้า Google Drive...";
+
+        // 2. รวบรวมรูปทั้งหมด (St.1, St.2, St.3 + Final) ส่งเข้า Google Drive
         const allUrls = [
           ...(currentBillData.station1_thumbs || []),
           ...(currentBillData.station2_thumbs || []),
@@ -229,10 +270,10 @@
           payloadImgs.push({ name: `img_${i+1}.jpg`, base64: b64 });
         }
 
-        if (payloadImgs.length > 0) {
+        if (payloadImgs.length > 0 && GOOGLE_SCRIPT_URL) {
           await fetch(GOOGLE_SCRIPT_URL, {
             method: "POST",
-            mode: "no-cors",
+            mode: "no-cors", // จำเป็นสำหรับ Apps Script Web App
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               action: "saveBillImages",
@@ -242,20 +283,25 @@
           });
         }
 
-        // 3. ปรับสถานะเป็น PAID
-        await db.from("customers").update({
+        // 3. ปรับสถานะเป็น PAID ใน Supabase
+        btn.innerText = "กำลังปิดบิล...";
+        const { error: dbErr } = await db.from("customers").update({
           final_status: "PAID",
           final_thumbs: finalUrls,
           final_time: new Date().toISOString()
         }).eq("bill_number", currentBillData.bill_number);
 
+        if (dbErr) throw new Error("DB Update Error: " + dbErr.message);
+
         alert("✅ ยืนยันรับเงินและสำรองรูปเข้า Google Drive สำเร็จ!");
         resetScan();
       } catch (err) {
+        console.error(err);
+        log.innerText = err.message;
         alert("เกิดข้อผิดพลาด: " + err.message);
       } finally {
-        document.getElementById("btnPay").disabled = false;
-        document.getElementById("loadingText").style.display = "none";
+        btn.disabled = false;
+        btn.innerText = "✅ ยืนยันรับเงิน (บันทึกลง Google Drive)";
       }
     }
 
@@ -270,6 +316,7 @@
       document.getElementById("stepScan").style.display = "block";
       document.getElementById("billBadge").innerText = "รอสแกน";
       document.getElementById("manualBillInput").value = "";
+      document.getElementById("finalLog").innerText = "";
       startScanner();
     }
   </script>
