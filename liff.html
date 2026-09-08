@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ระบบสแกนบิลและถ่ายรูป</title>
+  <title>Station - สแกนและถ่ายรูป</title>
   
-  <!-- ไลบรารี LIFF, Supabase และตัวอ่านบาร์โค้ด ZXing -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
@@ -18,12 +17,10 @@
     .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .badge { background: #2e7d32; color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 14px; font-weight: bold; }
     
-    /* โซนกล้อง */
-    .scanner-box { position: relative; width: 100%; max-width: 400px; height: 260px; margin: auto; overflow: hidden; border-radius: 8px; background: #000; }
+    .scanner-box { position: relative; width: 100%; max-width: 420px; height: 260px; margin: auto; overflow: hidden; border-radius: 8px; background: #000; }
     video { width: 100%; height: 100%; object-fit: cover; }
-    .laser-guide { position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: red; box-shadow: 0 0 4px red; }
+    .laser-guide { position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: red; box-shadow: 0 0 6px red; }
     
-    /* ปุ่มกด */
     .btn { width: 100%; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; margin-top: 8px; }
     .btn-green { background: #2e7d32; color: #fff; }
     .btn-blue { background: #1976d2; color: #fff; }
@@ -35,35 +32,35 @@
     .thumb-box { position: relative; width: 80px; height: 80px; }
     .thumb-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
     .thumb-box button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; border-radius: 0 0 0 6px; width: 22px; height: 22px; }
+    .status-log { font-size: 13px; color: #d32f2f; text-align: center; margin-top: 8px; }
   </style>
 </head>
 <body>
 
-  <!-- การ์ดหัวข้อ -->
   <div class="card">
     <div class="header-bar">
-      <h3 id="stationLabel">กำลังโหลด...</h3>
-      <span class="badge" id="billBadge">รอเลขบิล</span>
+      <h3 id="stationLabel">กำลังเริ่มระบบ...</h3>
+      <span class="badge" id="billBadge">รอสแกน</span>
     </div>
 
-    <!-- สเต็ปที่ 1: กล้องสแกนบาร์โค้ด -->
+    <!-- โหมดที่ 1: สแกนบาร์โค้ด -->
     <div id="stepBarcode">
-      <p style="text-align: center; font-size: 14px; color: #555; margin-bottom: 8px;">เล็งแท่งบาร์โค้ดให้อยู่ตรงกลางเส้นสีแดง</p>
+      <p style="text-align: center; font-size: 14px; color: #555; margin-bottom: 8px;">เล็งเส้นสีแดงให้อยู่บนบาร์โค้ด</p>
       <div class="scanner-box">
-        <video id="barcodeVideo"></video>
+        <video id="barcodeVideo" playsinline></video>
         <div class="laser-guide"></div>
       </div>
 
       <div style="margin-top: 14px; text-align: center;">
-        <span style="font-size: 13px; color: #777;">หรือถ้าบาร์โค้ดอ่านไม่ติด ให้พิมพ์เลขที่นี่:</span>
-        <input type="text" id="manualBillInput" placeholder="กรอกเลขบิล เช่น 69011-1788852961">
+        <span style="font-size: 13px; color: #777;">หากอ่านไม่ติด กรอกเลขบิลที่นี่:</span>
+        <input type="text" id="manualBillInput" placeholder="เช่น 69011-1788852961">
         <button class="btn btn-blue" onclick="useManualBill()">ตกลงใช้เลขนี้</button>
       </div>
     </div>
 
-    <!-- สเต็ปที่ 2: โหมดถ่ายรูปลูกค้า (จะเปิดเมื่อได้เลขบิลแล้ว) -->
+    <!-- โหมดที่ 2: ถ่ายรูปลูกค้า -->
     <div id="stepCustomer" style="display: none;">
-      <p style="text-align: center; font-size: 14px; color: #2e7d32; font-weight: bold; margin-bottom: 6px;" id="billTitleText"></p>
+      <p style="text-align: center; font-size: 15px; color: #2e7d32; font-weight: bold; margin-bottom: 6px;" id="billTitleText"></p>
       
       <div class="scanner-box" style="height: 300px;">
         <video id="customerVideo" autoplay playsinline></video>
@@ -77,6 +74,7 @@
         <button id="btnSave" class="btn btn-green" onclick="saveCustomerData()">💾 บันทึกรูปและจบงาน</button>
         <button class="btn btn-outline" onclick="resetToBarcodeStep()">ยกเลิก / สแกนบิลใหม่</button>
       </div>
+      <p id="errorLog" class="status-log"></p>
     </div>
   </div>
 
@@ -89,32 +87,46 @@
     let customerImages = [];
     let customerStream = null;
 
-    // เริ่มต้นระบบเมื่อเปิดหน้าเว็บ
+    // แปลง Base64 DataURL เป็น Blob โดยตรง เพื่อความเสถียรบนมือถือ
+    function dataURLtoBlob(dataurl) {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new Blob([u8arr], { type: mime });
+    }
+
     window.onload = async () => {
-      // ดึงสถานีจาก Query Param เช่น ?station=2 ถ้าไม่ระบุให้เป็น 1
       const urlParams = new URLSearchParams(window.location.search);
       currentStation = urlParams.get('station') || '1';
       document.getElementById("stationLabel").innerText = `สถานีที่ ${currentStation}`;
 
-      // เชื่อมต่อ Supabase
-      db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-      // เริ่มต้นระบบ LINE LIFF
       try {
-        await liff.init({ liffId: MY_LIFF_ID });
-        startBarcodeScanner();
+        db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       } catch (err) {
-        console.error("LIFF Init Error", err);
-        startBarcodeScanner(); // ทำงานต่อแม้เปิดผ่าน Browser ปกติ
+        alert("ตั้งค่า SUPABASE_URL ไม่ถูกต้อง กรุณาตรวจสอบ config.js");
+        return;
       }
+
+      try {
+        if (typeof liff !== "undefined") {
+          await liff.init({ liffId: MY_LIFF_ID });
+        }
+      } catch (e) {
+        console.warn("LIFF Init failed, fallback to web:", e);
+      }
+      
+      startBarcodeScanner();
     };
 
-    // 1. ฟังก์ชันเปิดกล้องอ่านบาร์โค้ดสด
     function startBarcodeScanner() {
       codeReader = new ZXing.BrowserMultiFormatReader();
       codeReader.decodeFromVideoDevice(null, 'barcodeVideo', (result, err) => {
-        if (result) {
-          // อ่านบาร์โค้ดติดแล้ว!
+        if (result && result.text) {
           onBillDetected(result.text);
         }
       });
@@ -122,15 +134,13 @@
 
     function useManualBill() {
       const val = document.getElementById("manualBillInput").value.trim();
-      if (!val) { alert("กรุณาพิมพ์เลขบิลก่อนครับ"); return; }
+      if (!val) { alert("กรุณาพิมพ์เลขบิลก่อน"); return; }
       onBillDetected(val);
     }
 
-    // เมื่อได้เลขบิลแล้ว สลับไปโหมดถ่ายรูปลูกค้า
     function onBillDetected(billNo) {
       currentBillNumber = billNo;
       
-      // ปิดกล้องอ่านบาร์โค้ด
       if (codeReader) {
         codeReader.reset();
         codeReader = null;
@@ -139,36 +149,37 @@
       document.getElementById("stepBarcode").style.display = "none";
       document.getElementById("stepCustomer").style.display = "block";
       document.getElementById("billBadge").innerText = "บิล: " + billNo;
-      document.getElementById("billTitleText").innerText = `กำลังบันทึกรูปลูกค้าบิล: ${billNo}`;
+      document.getElementById("billTitleText").innerText = `กำลังบันทึกบิล: ${billNo}`;
 
-      // เปิดกล้องถ่ายรูปลูกค้า
       startCustomerCamera();
     }
 
-    // 2. ฟังก์ชันกล้องถ่ายรูปลูกค้า
     async function startCustomerCamera() {
       const video = document.getElementById("customerVideo");
       try {
         customerStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }, // ใช้กล้องหลัง
+          video: { facingMode: "environment" },
           audio: false
         });
         video.srcObject = customerStream;
       } catch (err) {
-        alert("ไม่สามารถเปิดกล้องถ่ายภาพได้ กรุณาอนุญาตสิทธิ์กล้อง");
+        alert("ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตสิทธิ์เข้าถึงกล้อง");
       }
     }
 
     function stopCustomerCamera() {
       if (customerStream) {
-        customerStream.getTracks().forEach(track => track.stop());
+        customerStream.getTracks().forEach(t => t.stop());
         customerStream = null;
       }
     }
 
-    // กดถ่ายรูปและบีบอัดรูปย่อลงอัตโนมัติ
     function takeCustomerPhoto() {
       const video = document.getElementById("customerVideo");
+      if (!video.videoWidth) {
+        alert("กล้องยังไม่พร้อม กรุณารอสักครู่");
+        return;
+      }
       const canvas = document.createElement("canvas");
       const targetWidth = 640;
       const scale = targetWidth / video.videoWidth;
@@ -178,8 +189,7 @@
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const smallDataUrl = canvas.toDataURL("image/jpeg", 0.7);
-      customerImages.push(smallDataUrl);
+      customerImages.push(canvas.toDataURL("image/jpeg", 0.7));
       renderPreview();
     }
 
@@ -199,33 +209,46 @@
       });
     }
 
-    // 3. บันทึกข้อมูลและรูปภาพเข้า Supabase
     async function saveCustomerData() {
       if (customerImages.length === 0) {
-        alert("กรุณาถ่ายรูปลูกค้าอย่างน้อย 1 รูปครับ");
+        alert("กรุณาถ่ายรูปอย่างน้อย 1 รูป");
         return;
       }
 
       const btn = document.getElementById("btnSave");
-      btn.innerText = "กำลังบันทึกข้อมูล...";
+      const errEl = document.getElementById("errorLog");
+      errEl.innerText = "";
+      btn.innerText = "กำลังอัปโหลดรูป...";
       btn.disabled = true;
 
       try {
         const uploadedUrls = [];
         for (let i = 0; i < customerImages.length; i++) {
-          const res = await fetch(customerImages[i]);
-          const blob = await res.blob();
+          const blob = dataURLtoBlob(customerImages[i]);
           const filePath = `${currentBillNumber}/station${currentStation}/${Date.now()}_${i+1}.jpg`;
           
-          await db.storage.from(STORAGE_BUCKET).upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+          const { error: upErr } = await db.storage
+            .from(STORAGE_BUCKET)
+            .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+
+          if (upErr) throw new Error("Storage Upload Error: " + upErr.message);
+
           const { data: pData } = db.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
           uploadedUrls.push(pData.publicUrl);
         }
 
-        // อัปเดตตาราง customers
-        let { data: existing } = await db.from("customers").select("bill_number").eq("bill_number", currentBillNumber).single();
+        btn.innerText = "กำลังบันทึกฐานข้อมูล...";
 
-        const updatePayload = {
+        // ดึงข้อมูลเดิมมาอัปเดต ถ้าไม่มีให้แทรกใหม่
+        const { data: existing, error: checkErr } = await db
+          .from("customers")
+          .select("bill_number")
+          .eq("bill_number", currentBillNumber)
+          .maybeSingle();
+
+        if (checkErr) throw new Error("DB Check Error: " + checkErr.message);
+
+        const payload = {
           bill_number: currentBillNumber,
           [`station${currentStation}_status`]: "DONE",
           [`station${currentStation}_thumbs`]: uploadedUrls,
@@ -233,14 +256,18 @@
         };
 
         if (!existing) {
-          await db.from("customers").insert([updatePayload]);
+          const { error: inErr } = await db.from("customers").insert([payload]);
+          if (inErr) throw new Error("DB Insert Error: " + inErr.message);
         } else {
-          await db.from("customers").update(updatePayload).eq("bill_number", currentBillNumber);
+          const { error: upDbErr } = await db.from("customers").update(payload).eq("bill_number", currentBillNumber);
+          if (upDbErr) throw new Error("DB Update Error: " + upDbErr.message);
         }
 
         alert("✅ บันทึกข้อมูลบิล " + currentBillNumber + " สำเร็จ!");
         resetToBarcodeStep();
       } catch (err) {
+        console.error(err);
+        errEl.innerText = err.message;
         alert("เกิดข้อผิดพลาด: " + err.message);
       } finally {
         btn.innerText = "💾 บันทึกรูปและจบงาน";
@@ -248,14 +275,14 @@
       }
     }
 
-    // รีเซ็ตหน้าจอเพื่อเริ่มบิลใหม่
     function resetToBarcodeStep() {
       stopCustomerCamera();
       customerImages = [];
       renderPreview();
       currentBillNumber = "";
-      document.getElementById("billBadge").innerText = "รอเลขบิล";
+      document.getElementById("billBadge").innerText = "รอสแกน";
       document.getElementById("manualBillInput").value = "";
+      document.getElementById("errorLog").innerText = "";
       document.getElementById("stepCustomer").style.display = "none";
       document.getElementById("stepBarcode").style.display = "block";
       startBarcodeScanner();
