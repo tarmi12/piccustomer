@@ -4,4 +4,4 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const STORAGE_BUCKET = "customer-images";
 
 // นำ Web App URL จาก Google Apps Script ในขั้นตอนที่ 1.2 มาใส่
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyXp4n00Si6dfH0iQxtt5mPAWuna3LjYs0dyGlnkk572qjqCRL2oTN8c0mg8SJxG_5K/exec";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzB_vUvJ_3Mwab9K3P87MJVjSt3SKbBttKre3FWDwjEEe2cTK7oZulfC3tNpOD62w9G/exec";
