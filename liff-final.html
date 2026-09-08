@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Final - สแกนรับเงิน</title>
+  
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <script src="shared/config.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f0f2f5; padding: 12px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 12px; }
+    .scanner-box { position: relative; width: 100%; max-width: 400px; height: 240px; margin: auto; overflow: hidden; border-radius: 8px; background: #000; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    .laser-guide { position: absolute; top: 50%; left: 10%; width: 80%; height: 2px; background: red; box-shadow: 0 0 4px red; }
+    .btn { width: 100%; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; margin-top: 8px; }
+    .btn-green { background: #2e7d32; color: #fff; }
+    .btn-blue { background: #1976d2; color: #fff; }
+    .btn-orange { background: #f57c00; color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid #999; color: #333; }
+    input[type="text"] { width: 100%; padding: 12px; font-size: 18px; border: 1px solid #ccc; border-radius: 8px; text-align: center; margin-top: 6px; }
+    .preview-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .thumb-box { position: relative; width: 80px; height: 80px; }
+    .thumb-box img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+    .thumb-box button { position: absolute; top: 0; right: 0; background: red; color: #fff; border: none; border-radius: 0 0 0 6px; width: 20px; height: 20px; }
+    .station-block { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 8px; }
+    .station-block h5 { margin-bottom: 6px; color: #333; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h3 style="color: #2e7d32;">แคชเชียร์รับเงิน (Final)</h3>
+      <span id="billBadge" style="background: #e0e0e0; padding: 4px 8px; border-radius: 12px; font-size: 13px;">รอสแกน</span>
+    </div>
+
+    <!-- ขั้นที่ 1: สแกนบาร์โค้ดบิล -->
+    <div id="stepScan">
+      <p style="text-align: center; font-size: 14px; color: #555; margin-bottom: 8px;">เล็งแท่งบาร์โค้ดเพื่อค้นหาบิล</p>
+      <div class="scanner-box">
+        <video id="scanVideo"></video>
+        <div class="laser-guide"></div>
+      </div>
+      <div style="margin-top: 14px; text-align: center;">
+        <input type="text" id="manualBillInput" placeholder="หรือกรอกเลขบิลที่นี่">
+        <button class="btn btn-blue" onclick="useManualBill()">ค้นหาบิล</button>
+      </div>
+    </div>
+
+    <!-- ขั้นที่ 2: แสดงรูปทุกสถานี + ถ่ายรูปรับเงิน -->
+    <div id="stepConfirm" style="display: none;">
+      <h4 id="billTitle" style="color: #2e7d32; margin-bottom: 8px;"></h4>
+
+      <!-- รูปเปรียบเทียบจากแต่ละสถานี -->
+      <div class="station-block"><h5>รูปจาก Station 1:</h5><div id="st1Imgs" class="preview-grid">ไม่มีรูป</div></div>
+      <div class="station-block"><h5>รูปจาก Station 2:</h5><div id="st2Imgs" class="preview-grid">ไม่มีรูป</div></div>
+      <div class="station-block"><h5>รูปจาก Station 3:</h5><div id="st3Imgs" class="preview-grid">ไม่มีรูป</div></div>
+
+      <!-- ถ่ายรูปตอนรับเงิน/บัตรประชาชน -->
+      <div style="margin-top: 16px; border-top: 2px dashed #ccc; padding-top: 12px;">
+        <h4>📸 ถ่ายรูปลูกค้ารับเงิน / บัตรประชาชน (สูงสุด 3 รูป):</h4>
+        <div class="scanner-box" style="height: 240px; margin-top: 8px;">
+          <video id="finalVideo" autoplay playsinline></video>
+        </div>
+        <button class="btn btn-orange" onclick="takeFinalPhoto()">ถ่ายรูปรับเงิน/บัตร</button>
+        <div id="finalPhotosList" class="preview-grid"></div>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <button id="btnPay" class="btn btn-green" onclick="confirmPayment()">✅ ยืนยันรับเงิน (บันทึกลง Google Drive)</button>
+        <button class="btn btn-outline" onclick="resetScan()">สแกนบิลอื่น</button>
+      </div>
+      <p id="loadingText" style="display:none; color: red; font-weight: bold; text-align: center; margin-top: 8px;">กำลังส่งรูปเข้า Google Drive...</p>
+    </div>
+  </div>
+
+  <script>
+    let db = null;
+    let codeReader = null;
+    let currentBillData = null;
+    let finalImages = [];
+    let finalStream = null;
+
+    window.onload = async () => {
+      db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      startScanner();
+    };
+
+    function startScanner() {
+      codeReader = new ZXing.BrowserMultiFormatReader();
+      codeReader.decodeFromVideoDevice(null, 'scanVideo', (result, err) => {
+        if (result) {
+          fetchBill(result.text);
+        }
+      });
+    }
+
+    function useManualBill() {
+      const val = document.getElementById("manualBillInput").value.trim();
+      if (!val) return;
+      fetchBill(val);
+    }
+
+    async function fetchBill(billNo) {
+      if (codeReader) {
+        codeReader.reset();
+        codeReader = null;
+      }
+
+      const { data, error } = await db.from("customers").select("*").eq("bill_number", billNo).single();
+      if (error || !data) {
+        alert("ไม่พบเลขบิลนี้ในระบบ");
+        startScanner();
+        return;
+      }
+
+      currentBillData = data;
+      document.getElementById("stepScan").style.display = "none";
+      document.getElementById("stepConfirm").style.display = "block";
+      document.getElementById("billBadge").innerText = billNo;
+      document.getElementById("billTitle").innerText = `บิลเลขที่: ${billNo}`;
+
+      renderThumbs("st1Imgs", data.station1_thumbs);
+      renderThumbs("st2Imgs", data.station2_thumbs);
+      renderThumbs("st3Imgs", data.station3_thumbs);
+
+      startFinalCamera();
+    }
+
+    function renderThumbs(boxId, urls) {
+      const box = document.getElementById(boxId);
+      box.innerHTML = "";
+      if (!urls || urls.length === 0) { box.innerText = "ไม่มีรูป"; return; }
+      urls.forEach(u => {
+        const div = document.createElement("div");
+        div.className = "thumb-box";
+        div.innerHTML = `<img src="${u}">`;
+        box.appendChild(div);
+      });
+    }
+
+    async function startFinalCamera() {
+      const video = document.getElementById("finalVideo");
+      try {
+        finalStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = finalStream;
+      } catch (e) {
+        console.error("Camera error", e);
+      }
+    }
+
+    function takeFinalPhoto() {
+      if (finalImages.length >= 3) {
+        alert("ถ่ายได้สูงสุด 3 รูปครับ");
+        return;
+      }
+      const video = document.getElementById("finalVideo");
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = (video.videoHeight / video.videoWidth) * 640;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      finalImages.push(canvas.toDataURL("image/jpeg", 0.7));
+      renderFinalThumbs();
+    }
+
+    function removeFinalPhoto(idx) {
+      finalImages.splice(idx, 1);
+      renderFinalThumbs();
+    }
+
+    function renderFinalThumbs() {
+      const box = document.getElementById("finalPhotosList");
+      box.innerHTML = "";
+      finalImages.forEach((url, idx) => {
+        const div = document.createElement("div");
+        div.className = "thumb-box";
+        div.innerHTML = `<img src="${url}"><button onclick="removeFinalPhoto(${idx})">X</button>`;
+        box.appendChild(div);
+      });
+    }
+
+    async function urlToBase64(url) {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function confirmPayment() {
+      document.getElementById("btnPay").disabled = true;
+      document.getElementById("loadingText").style.display = "block";
+
+      try {
+        // 1. อัปโหลดรูป Final ขึ้น Supabase
+        const finalUrls = [];
+        for (let i = 0; i < finalImages.length; i++) {
+          const res = await fetch(finalImages[i]);
+          const blob = await res.blob();
+          const filePath = `${currentBillData.bill_number}/final/${Date.now()}_${i+1}.jpg`;
+          await db.storage.from(STORAGE_BUCKET).upload(filePath, blob, { contentType: 'image/jpeg', upsert: true });
+          const { data: pData } = db.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
+          finalUrls.push(pData.publicUrl);
+        }
+
+        // 2. รวบรวมรูปทั้งหมดส่งเข้า Google Drive
+        const allUrls = [
+          ...(currentBillData.station1_thumbs || []),
+          ...(currentBillData.station2_thumbs || []),
+          ...(currentBillData.station3_thumbs || []),
+          ...finalUrls
+        ];
+
+        const payloadImgs = [];
+        for (let i = 0; i < allUrls.length; i++) {
+          const b64 = await urlToBase64(allUrls[i]);
+          payloadImgs.push({ name: `img_${i+1}.jpg`, base64: b64 });
+        }
+
+        if (payloadImgs.length > 0) {
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "saveBillImages",
+              billNumber: currentBillData.bill_number,
+              images: payloadImgs
+            })
+          });
+        }
+
+        // 3. ปรับสถานะเป็น PAID
+        await db.from("customers").update({
+          final_status: "PAID",
+          final_thumbs: finalUrls,
+          final_time: new Date().toISOString()
+        }).eq("bill_number", currentBillData.bill_number);
+
+        alert("✅ ยืนยันรับเงินและสำรองรูปเข้า Google Drive สำเร็จ!");
+        resetScan();
+      } catch (err) {
+        alert("เกิดข้อผิดพลาด: " + err.message);
+      } finally {
+        document.getElementById("btnPay").disabled = false;
+        document.getElementById("loadingText").style.display = "none";
+      }
+    }
+
+    function resetScan() {
+      if (finalStream) {
+        finalStream.getTracks().forEach(t => t.stop());
+        finalStream = null;
+      }
+      finalImages = [];
+      currentBillData = null;
+      document.getElementById("stepConfirm").style.display = "none";
+      document.getElementById("stepScan").style.display = "block";
+      document.getElementById("billBadge").innerText = "รอสแกน";
+      document.getElementById("manualBillInput").value = "";
+      startScanner();
+    }
+  </script>
+</body>
+</html>
